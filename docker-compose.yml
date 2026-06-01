@@ -1,0 +1,79 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sports_betting_db
+    environment:
+      POSTGRES_USER: sports_user
+      POSTGRES_PASSWORD: sports_password
+      POSTGRES_DB: sports_betting
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sports_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: sports_betting_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sports_betting_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql://sports_user:sports_password@postgres:5432/sports_betting
+      REDIS_URL: redis://redis:6379
+      DEBUG: "True"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    networks:
+      - sports_betting
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sports_betting_web
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+    networks:
+      - sports_betting
+
+volumes:
+  postgres_data:
+
+networks:
+  sports_betting:
+    driver: bridge
